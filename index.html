@@ -63,7 +63,8 @@
 
 			import * as THREE from './node_modules/three/build/three.module.js';
     
-			import { PointerLockControls } from './node_modules/three/examples/jsm/controls/PointerLockControls.js';
+      import { PointerLockControls } from './node_modules/three/examples/jsm/controls/PointerLockControls.js';
+      import { GLTFLoader } from './node_modules/three/examples/jsm/loaders/GLTFLoader.js';
 
 			var camera, scene, renderer, controls;
 
@@ -190,7 +191,14 @@
 				document.addEventListener( 'keydown', onKeyDown, false );
 				document.addEventListener( 'keyup', onKeyUp, false );
 
-				raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 10 );
+        raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 10 );
+        
+        // model
+
+        var loader = new GLTFLoader().setPath( './assets/models/iuStudio/' );
+        loader.load( 'iuStudio.gltf', function ( gltf ) {  
+          scene.add( gltf.scene );
+        });
 
 				// floor
 
