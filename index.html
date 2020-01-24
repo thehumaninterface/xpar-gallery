@@ -61,22 +61,38 @@
 
   <script type="module">
 
-			import * as THREE from './node_modules/three/build/three.module.js';
     
-      import { PointerLockControls } from './node_modules/three/examples/jsm/controls/PointerLockControls.js';
-      import { GLTFLoader } from './node_modules/three/examples/jsm/loaders/GLTFLoader.js';
+    import * as THREE from './node_modules/three/build/three.module.js';
+    
+    import { PointerLockControls } from './node_modules/three/examples/jsm/controls/PointerLockControls.js';
+    import { GLTFLoader } from './node_modules/three/examples/jsm/loaders/GLTFLoader.js';
+    import { EffectComposer } from './node_modules/three/examples/jsm/postprocessing/EffectComposer.js';
+    import { RenderPass } from './node_modules/three/examples/jsm/postprocessing/RenderPass.js';
+    import { ShaderPass } from './node_modules/three/examples/jsm/postprocessing/ShaderPass.js';
+    import { OutlinePass } from './node_modules/three/examples/jsm/postprocessing/OutlinePass.js';
+    import { FXAAShader } from './node_modules/three/examples/jsm/shaders/FXAAShader.js';
+    
+    var camera, scene, renderer, controls;
+    
+    var posters = [];
+    var activePoster;
+    
+    window.THREE = THREE;
 
-			var camera, scene, renderer, controls;
 
-			var objects = [];
+      var raycaster;
 
-			var raycaster;
+      var arrowHelper;
+      
+      var composer, effectFXAA, outlinePass; // for outline effect
+      var selectedObjects = [];
 
 			var moveForward = false;
 			var moveBackward = false;
 			var moveLeft = false;
 			var moveRight = false;
-			var canJump = false;
+      var canJump = false;
+      var logEvents = false;
 
 			var prevTime = performance.now();
 			var velocity = new THREE.Vector3();
@@ -85,7 +101,22 @@
 			var color = new THREE.Color();
 
 			init();
-			animate();
+      animate();
+      
+      // David Walsh
+      // https://davidwalsh.name/javascript-once
+      function once(fn, context) { 
+        var result;
+
+        return function() { 
+          if(fn) {
+            result = fn.apply(context || this, arguments);
+            fn = null;
+          }
+
+          return result;
+        };
+      }
 
 			function init() {
 
@@ -93,7 +124,7 @@
 				camera.position.y = 17.5;
 
 				scene = new THREE.Scene();
-				scene.background = new THREE.Color( 0xeeeeee );
+				scene.background = new THREE.Color( 0x222222 );
 				scene.fog = new THREE.Fog( 0xffffff, 0, 750 );
 
 				var light = new THREE.HemisphereLight( 0xffffff, 0xffffff, 1 );
@@ -154,7 +185,11 @@
 						case 32: // space
 							if ( canJump === true ) velocity.y += 350;
 							canJump = false;
-							break;
+              break;
+              
+            case 76: // l for log
+              logEvents = true;
+              break;
 
 					}
 
@@ -182,33 +217,62 @@
 						case 39: // right
 						case 68: // d
 							moveRight = false;
-							break;
-
+              break;
+            
 					}
 
 				};
 
 				document.addEventListener( 'keydown', onKeyDown, false );
-				document.addEventListener( 'keyup', onKeyUp, false );
+        document.addEventListener( 'keyup', onKeyUp, false );
+        
+        // raycaster
 
-        raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 10 );
+        raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, 0, -1 ), 0, 30 );
+        // arrowHelper = new THREE.ArrowHelper( new THREE.Vector3(), new THREE.Vector3( 0, 17.5, 0), 10, 0x00ff00 );
+        // scene.add(arrowHelper);
         
         // model
 
         var loader = new GLTFLoader().setPath( './assets/models/xpar-gallery/' );
         loader.load( 'xpar-gallery.glb', function ( gltf ) {  
+
+          posters = gltf.scene.getObjectByName( "posterCollection", true ).children;
+
           scene.add( gltf.scene );
         });
 
 				// floor
 
 				// var floorGeometry = new THREE.PlaneBufferGeometry( 2000, 2000, 100, 100 );
-				// floorGeometry.rotateX( - Math.PI / 2 );
+        // floorGeometry.rotateX( - Math.PI / 2 );
+        
+        // renderer
 
-				renderer = new THREE.WebGLRenderer( { antialias: true } );
+        renderer = new THREE.WebGLRenderer( { antialias: true } );
 				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( window.innerWidth, window.innerHeight );
+        renderer.setSize( window.innerWidth, window.innerHeight );
 				document.body.appendChild( renderer.domElement );
+
+       // postprocessing
+
+				composer = new EffectComposer( renderer );
+
+        var renderPass = new RenderPass( scene, camera );
+        composer.addPass( renderPass );
+
+        outlinePass = new OutlinePass( new THREE.Vector2( window.innerWidth, window.innerHeight ), scene, camera );
+        
+        outlinePass.edgeStrengh = 3;
+        outlinePass.edgeGlow = 1;
+        outlinePass.edgeThickness = 1;
+        outlinePass.visibleEdgeColor.set ('#15A4A8');
+
+        composer.addPass( outlinePass );
+
+        effectFXAA = new ShaderPass( FXAAShader );
+        effectFXAA.uniforms[ 'resolution' ].value.set( 1 / window.innerWidth, 1 / window.innerHeight );
+        composer.addPass( effectFXAA );
 
 				//
 
@@ -221,25 +285,55 @@
 				camera.aspect = window.innerWidth / window.innerHeight;
 				camera.updateProjectionMatrix();
 
-				renderer.setSize( window.innerWidth, window.innerHeight );
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        composer.setSize( window.innerWidth, window.innerHeight );
+        
+        effectFXAA.uniforms[ 'resolution' ].value.set( 1 / window.innerWidth, 1 / window.innerHeight );
 
-			}
+      }
 
 			function animate() {
 
-				requestAnimationFrame( animate );
-
+        requestAnimationFrame( animate );
+        
 				if ( controls.isLocked === true ) {
 
-					raycaster.ray.origin.copy( controls.getObject().position );
-					raycaster.ray.origin.y -= 17.5;
-
-					var intersections = raycaster.intersectObjects( objects );
-
-					var onObject = intersections.length > 0;
-
-					var time = performance.now();
+          var time = performance.now();
 					var delta = ( time - prevTime ) / 1000;
+          
+          // raycaster.set(
+          //   controls.getObject().position, // origin
+          //   controls.getDirection(new THREE.Vector3(0, 0, -1)) // direction
+          // );
+          // 
+          // same as
+
+          raycaster.setFromCamera(new THREE.Vector2(), camera);
+                    
+          var intersections = raycaster.intersectObjects( posters );
+
+          var onObject = intersections.length > 0;
+          
+          if (logEvents) {
+            console.log("Found posters: ", intersections[0]);
+            console.log(raycaster);
+            console.log(controls);
+            logEvents = false;
+          }
+
+          if (onObject) {
+            // activePoster = intersections[0].object;
+            outlinePass.selectedObjects = function() {
+              let selectedObjects = [];
+              intersections.forEach(function(intersection) {
+                selectedObjects.push(intersection.object);
+              });
+              return selectedObjects;
+            }();
+          } else {
+            activePoster = undefined;
+            outlinePass.selectedObjects = [];
+          }
 
 					velocity.x -= velocity.x * 10.0 * delta;
 					velocity.z -= velocity.z * 10.0 * delta;
@@ -278,7 +372,7 @@
 
 				}
 
-				renderer.render( scene, camera );
+				composer.render( scene, camera );
 
 			}
 
