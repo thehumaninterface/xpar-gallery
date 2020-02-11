@@ -76,6 +76,7 @@
     
     var posters = [];
     var activePoster;
+    var prevPoster;
     
     window.THREE = THREE;
 
@@ -228,7 +229,7 @@
         
         // raycaster
 
-        raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, 0, -1 ), 0, 30 );
+        raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, 0, -1 ), 0, 20 );
         // arrowHelper = new THREE.ArrowHelper( new THREE.Vector3(), new THREE.Vector3( 0, 17.5, 0), 10, 0x00ff00 );
         // scene.add(arrowHelper);
         
@@ -276,7 +277,10 @@
 
 				//
 
-				window.addEventListener( 'resize', onWindowResize, false );
+        window.addEventListener( 'resize', onWindowResize, false );
+        
+        window.addEventListener( 'onPosterEnter', onPosterEnter, false);
+        window.addEventListener( 'onPosterLeave', onPosterLeave, false);
 
 			}
 
@@ -290,6 +294,13 @@
         
         effectFXAA.uniforms[ 'resolution' ].value.set( 1 / window.innerWidth, 1 / window.innerHeight );
 
+      }
+
+      function onPosterEnter(e) {
+        console.log(e.detail.poster);
+      }
+      function onPosterLeave(e) {
+        console.log(e.detail.poster);
       }
 
 			function animate() {
@@ -310,29 +321,47 @@
 
           raycaster.setFromCamera(new THREE.Vector2(), camera);
                     
-          var intersections = raycaster.intersectObjects( posters );
 
-          var onObject = intersections.length > 0;
-          
+          var posterIntersections = raycaster.intersectObjects( posters );
+
+          if (posterIntersections.length > 0) {
+
+            activePoster = posterIntersections[0].object;
+
+
+
+            outlinePass.selectedObjects = [ activePoster ];
+
+            if (activePoster !== prevPoster) {
+              var event = 
+              window.dispatchEvent(new CustomEvent("onPosterEnter", {
+                'detail': {
+                  'poster': activePoster
+                }
+              }));
+            }
+
+            prevPoster = activePoster;
+            
+          } else {
+            activePoster = undefined;
+            if (prevPoster) {
+              window.dispatchEvent(new CustomEvent("onPosterLeave", {
+                'detail': {
+                  'poster': prevPoster
+                }
+              }));
+            }
+            prevPoster = undefined;
+            outlinePass.selectedObjects = [];
+          }
+
           if (logEvents) {
-            console.log("Found posters: ", intersections[0]);
+            console.log("Found posters: ", posterIntersections);
+            console.log(activePoster);
             console.log(raycaster);
             console.log(controls);
             logEvents = false;
-          }
-
-          if (onObject) {
-            // activePoster = intersections[0].object;
-            outlinePass.selectedObjects = function() {
-              let selectedObjects = [];
-              intersections.forEach(function(intersection) {
-                selectedObjects.push(intersection.object);
-              });
-              return selectedObjects;
-            }();
-          } else {
-            activePoster = undefined;
-            outlinePass.selectedObjects = [];
           }
 
 					velocity.x -= velocity.x * 10.0 * delta;
@@ -346,13 +375,6 @@
 
 					if ( moveForward || moveBackward ) velocity.z -= direction.z * 400.0 * delta;
 					if ( moveLeft || moveRight ) velocity.x -= direction.x * 400.0 * delta;
-
-					if ( onObject === true ) {
-
-						velocity.y = Math.max( 0, velocity.y );
-						canJump = true;
-
-					}
 
 					controls.moveRight( - velocity.x * delta );
 					controls.moveForward( - velocity.z * delta );
